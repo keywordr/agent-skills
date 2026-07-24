@@ -1,12 +1,14 @@
 ---
 name: content-egg
-description: Manage the Content Egg WordPress plugin and build product pages through its agent API (WordPress Abilities REST or MCP) - search affiliate products, attach them to posts, and compose pages from validated block trees.
+description: Use when the user wants to manage the Content Egg WordPress plugin or build affiliate/product pages (reviews, roundups, comparisons) on a site running it - searching products, images, videos or coupons, attaching them to posts, and composing validated block layouts through its agent API (WordPress Abilities REST or MCP).
 ---
 
 # Content Egg agent skill
 
 You are working with a WordPress site running the Content Egg plugin, which
-exposes ~23 abilities over the WordPress Abilities API.
+exposes an agent API over the WordPress Abilities API. `content-egg/get-status`
+reports the live ability count and the guide/OpenAPI URLs for that specific
+site - trust it over anything hardcoded here.
 
 ## Connect
 
@@ -25,10 +27,16 @@ Ask the user for: site URL, WordPress username, application password.
 1. Call `content-egg/get-status` first; it reports the build, module count and
    the guide/OpenAPI URLs.
 2. Read abilities are GET; write abilities are POST. Empty input is fine on
-   bare GET.
+   bare GET. Exceptions: `validate-blocks` and `preview-blocks` are POST even
+   though they have no side effects - their block tree is too nested for query
+   params. When unsure of an ability's method, read it from discovery/OpenAPI.
 3. Errors self-describe: 400 `cegg_validation_failed` messages name the field
    and the fix; 409 `cegg_conflict` means re-read (`get-post-products`) and
-   retry with the fresh `revision`; 429 means wait `retry_after` seconds.
+   retry with the fresh `revision`; 409 `cegg_feed_pending` means a feed is
+   still importing (poll `get-feed-status`); 429 means wait `retry_after`
+   seconds; 502 `cegg_search_failed` means the module's own API failed
+   (bad/missing key, quota) - relay the message, don't retry blindly. The site
+   guide lists the full set.
 4. `remove-products` and `insert-blocks` are destructive - confirm with the
    user before calling them.
 5. Never write back a masked secret value (`••••...`).
@@ -60,6 +68,27 @@ Ask the user for: site URL, WordPress username, application password.
    payload by module_id + unique_id.
 6. `content-egg/preview-blocks` or open `edit_url`; publish only when the
    user asks (needs publish_posts).
+
+## Finding images, videos and coupons
+
+Beyond products, Content Egg has image, video and coupon modules (see the
+`type` in `content-egg/list-modules`). Search them with
+`content-egg/search-images`, `search-videos`, `search-coupons` (one active
+module of that type). These are **retrieval only**: use the returned URLs or
+codes in your copy, or insert the module's `[content-egg module="<id>"]`
+shortcode to have Content Egg render them. Images, videos and coupons are
+shortcode-based - never Egg Blocks or the products block.
+
+## Custom / manual products (Offer module)
+
+For a product with no feed or API behind it (a hand-picked deal, an unsupported
+merchant), use the built-in "Offer" module: `add-products-to-post` with
+`module_id: "Offer"` and items you construct yourself - each needs
+`unique_id`, `title` and `url` (or `orig_url`), plus optional
+`price`/`currencyCode`/`description`/`img`. Offer auto-activates on first use
+(no `activate-module` call), and being a product module it renders through the
+products block and Egg Blocks like any other. Find it in `list-modules` (it may
+be listed as inactive).
 
 ## Editing existing posts
 
