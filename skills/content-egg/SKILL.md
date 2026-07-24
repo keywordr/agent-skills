@@ -123,6 +123,13 @@ POST create-post input:
 patch; get keys from `get-module-settings`), `create-feed-module` (async -
 poll `get-feed-status`), `update-settings` for global options.
 
+`connect-shop` creates a new affiliate shop module from a domain (needs the
+Affiliate Egg plugin): `connect-shop` (`domain`, e.g. "walmart.com") ->
+`search-products` (new `module_id`) -> `add-products-to-post`. Known shops are
+searchable at once; a custom domain needs Affiliate Egg 11.0+ and a `search_url`
+containing `%KEYWORD%`. The response's `searchable` flag says whether keyword
+search will work.
+
 ## Beyond Content Egg (core WordPress)
 
 These abilities cover Content Egg only. The same site + application-password
