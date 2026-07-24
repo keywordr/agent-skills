@@ -88,7 +88,10 @@ merchant), use the built-in "Offer" module: `add-products-to-post` with
 `price`/`currencyCode`/`description`/`img`. Offer auto-activates on first use
 (no `activate-module` call), and being a product module it renders through the
 products block and Egg Blocks like any other. Find it in `list-modules` (it may
-be listed as inactive).
+be listed as inactive). Affiliate links are applied automatically from the Offer
+module's per-domain deeplink rules; the response's `monetization` block reports
+how many links were monetized and lists any `domains_without_deeplink` - relay
+those so the user can add a deeplink rule in the Offer settings.
 
 ## Editing existing posts
 
@@ -119,3 +122,18 @@ POST create-post input:
 `activate-module` / `deactivate-module`, `update-module-settings` (partial
 patch; get keys from `get-module-settings`), `create-feed-module` (async -
 poll `get-feed-status`), `update-settings` for global options.
+
+## Beyond Content Egg (core WordPress)
+
+These abilities cover Content Egg only. The same site + application-password
+auth also reach core WordPress abilities (currently minimal) and the full
+WordPress REST API (`{site}/wp-json/wp/v2/`) - use it for the rest of the
+article. `create-post` returns the post_id that drives them:
+
+- Featured image: upload to `/wp/v2/media`, then set `featured_media` on the
+  post (`POST /wp/v2/posts/{id}`).
+- Categories/tags: `/wp/v2/categories`, `/wp/v2/tags`, assigned via the post's
+  `categories`/`tags` arrays.
+- Publish status: `status` (`draft`/`pending`/`publish`) on the post -
+  publishing needs `publish_posts`.
+- Find content: `GET /wp/v2/search?search=…` or `/wp/v2/posts?search=…`.
