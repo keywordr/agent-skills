@@ -17,19 +17,33 @@ Ask the user for: site URL, WordPress username, application password.
 - Discovery: `GET {site}/wp-json/wp-abilities/v1/abilities` (HTTP Basic auth)
 - Execute read abilities: `GET .../wp-abilities/v1/abilities/{name}/run?input[key]=value`
 - Execute write abilities: `POST .../wp-abilities/v1/abilities/{name}/run` with body `{"input": {...}}`
+- All-POST alternative: `POST {site}/wp-json/content-egg/v1/abilities/{name}/run`
+  with body `{"input": {...}}` for EVERY ability, reads included - same
+  abilities, same permission checks and logging. Prefer it when you drive HTTP
+  yourself: nothing to serialize into `input[...]` query params, and it is
+  unaffected by edge/WAF rules that block parameterized GETs. (Posting a
+  read-only ability to the wp-abilities route returns 405 instead.)
 - OpenAPI: `GET {site}/wp-json/content-egg/v1/openapi`
 - Site-specific guide: `GET {site}/wp-json/content-egg/v1/agent-guide` - READ IT FIRST;
   it carries the canonical block-choice rules and workflows.
 - MCP alternative (when the site runs the MCP Adapter): `{site}/wp-json/content-egg/mcp`
 
+If requests fail at the network level - DNS failure, connection refused, a
+sandbox policy error - rather than with an HTTP 401/403, your environment may
+restrict outbound domains. Ask the user to allow the site's domain (in Claude:
+Settings -> Capabilities -> allowed domains), then retry. Don't mistake this
+for an auth problem.
+
 ## Ground rules
 
 1. Call `content-egg/get-status` first; it reports the build, module count and
    the guide/OpenAPI URLs.
-2. Read abilities are GET; write abilities are POST. Empty input is fine on
-   bare GET. Exceptions: `validate-blocks` and `preview-blocks` are POST even
-   though they have no side effects - their block tree is too nested for query
-   params. When unsure of an ability's method, read it from discovery/OpenAPI.
+2. On the `wp-abilities` route, read abilities are GET and write abilities are
+   POST. Empty input is fine on bare GET. Exceptions: `validate-blocks` and
+   `preview-blocks` are POST even though they have no side effects - their
+   block tree is too nested for query params. When unsure of an ability's
+   method, read it from discovery/OpenAPI. None of this applies on the
+   `content-egg/v1` all-POST route, where every ability is a POST.
 3. Errors self-describe: 400 `cegg_validation_failed` messages name the field
    and the fix; 409 `cegg_conflict` means re-read (`get-post-products`) and
    retry with the fresh `revision`; 409 `cegg_feed_pending` means a feed is
@@ -185,9 +199,9 @@ Featured image, publish/schedule and finding posts are first-class abilities
 through the same channel as every other ability (including OpenAPI/connector
 agents). For anything else in core WordPress (categories/tags, excerpt, slug…),
 the full WordPress REST API (`{site}/wp-json/wp/v2/`) is reachable when an
-authenticated REST transport is available - a direct HTTP client (e.g. Claude
-Code) or an MCP/connector that exposes WordPress core - under the same
-application password, no separate auth. (An agent limited to the Content Egg
+authenticated REST transport is available - a direct HTTP client (Claude, Claude
+Code, your own script) or an MCP/connector that exposes WordPress core - under
+the same application password, no separate auth. (An agent limited to the Content Egg
 OpenAPI schema must add those endpoints to its connector first.) E.g. assign
 categories/tags via `/wp/v2/categories` + `/wp/v2/tags` and the post's
 `categories`/`tags` arrays.
