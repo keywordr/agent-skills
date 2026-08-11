@@ -80,8 +80,10 @@ for an auth problem.
 
 1. `content-egg/list-blocks` - catalog + decision rule (fetch one type with
    `input[type]=eggb/faq` for its full attribute schema).
-2. `content-egg/search-products` with `fields: "full"` on an active module
-   (see `content-egg/list-modules`). To compare across networks in one call,
+2. `content-egg/search-products` on an active module (see
+   `content-egg/list-modules`); the lean default is enough - keep the
+   response's `search_token` and refer to results by `unique_id` from here on.
+   To compare across networks in one call,
    `content-egg/search-all-products` takes explicit `module_ids` (up to 6) and
    returns results grouped per module (one broken module reports a per-module
    error, not a whole-call failure); results are grouped, not merged.
@@ -89,15 +91,23 @@ for an auth problem.
    (items bind products) -> product-card + pros-cons per product ->
    comparison-table -> faq -> conclusion/verdict.
 4. `content-egg/validate-blocks` - iterate until `valid: true`; errors carry
-   JSON-pointer paths.
+   JSON-pointer paths. Send the same `products` + `search_tokens` you will
+   send to create-post, so product_refs resolve for a post that does not
+   exist yet.
 5. `content-egg/create-post` - one call: `{title, status: "draft", blocks,
-   products: {ModuleId: [items...]}}`. product_refs resolve against the
-   payload by module_id + unique_id. Pass search-products items unchanged; to
-   tidy a source title or add a badge, attach a per-item `overrides` object
-   (title, subtitle, description, badge, badge_color, promo) - applied on top
-   and kept across price refreshes. Heavy rewriting -> Egg Blocks instead.
+   products: {ModuleId: ["unique_id", ...]}, search_tokens: {ModuleId: "..."}}`.
+   product_refs resolve against the payload by module_id + unique_id. With the
+   module's `search_token`, its items are just unique_id strings and the server
+   substitutes its stored copy; without one, pass full `fields: "full"` items
+   unchanged. To tidy a source title or add a badge, send `{unique_id,
+   overrides}` per item (title, subtitle, description, badge, badge_color,
+   promo) - applied on top and kept across price refreshes. Heavy rewriting ->
+   Egg Blocks instead.
 6. `content-egg/preview-blocks` or open `edit_url`; publish only when the
-   user asks (needs publish_posts).
+   user asks (needs publish_posts). Preview before the post exists validates
+   and renders, but a product-bound block has nothing to hydrate from and
+   comes back empty with an `unhydrated_product_ref` warning - that is
+   expected; preview again with `post_id` after create-post to see it filled.
 7. Finish the post: `content-egg/find-posts` (locate a post_id by search,
    status or `has_module`) -> `content-egg/set-featured-image` (an
    `attachment_id`, or an `image_url` e.g. from `search-images`) ->
@@ -119,8 +129,14 @@ stored copy of each result - you never echo item JSON back. The token
 expires in ~30 minutes; an expired-token error means re-run the search and
 attach again. If the search response has no `search_token`, the site runs an
 older Content Egg - fall back to `fields: "full"` and pass items unchanged.
-(`create-post`'s `products` payload still takes full items - only the add-*
-abilities accept id refs.)
+
+`create-post`, `validate-blocks` and `preview-blocks` take the same tokens as
+a `search_tokens` map (module_id => token) beside their `products` payload, so
+the page-build loop above never echoes item JSON either. Below Content Egg
+21.4.3 those three accept full items only: a 400 naming `products` (or an
+unknown-parameter error on `search_tokens`) means fall back to
+`fields: "full"`. Check `get-status`'s `plugin_version` if you want to know up
+front.
 
 ## Finding images, videos and coupons
 
@@ -175,7 +191,8 @@ POST create-post input:
         {"type": "core/markdown", "markdown": "## How we chose\n\nHands-on testing plus spec analysis."},
         {"type": "eggb/faq", "attrs": {"items": [{"question": "Do I need an interface?", "answer": "No - USB mics connect directly."}]}}
       ],
-      "products": {"Amazon": [ /* items from search-products fields=full */ ]}
+      "products": {"Amazon": ["B0EXAMPLE1"]},
+      "search_tokens": {"Amazon": "<search_token from search-products>"}
     }
 
 ## Module management (admin-capability users)
