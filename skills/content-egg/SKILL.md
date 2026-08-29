@@ -74,6 +74,13 @@ for an auth problem.
   `content-egg/videos`. Each renders module data attached to the post; template
   ids are unprefixed (`offers_grid`, never `data_offers_grid`). Coupons/images/
   videos have no Egg Blocks equivalent.
+- A product in an article that is not a sales page (how-to, buying guide,
+  troubleshooting, explainer): `eggb/editorial-product`. Same product binding
+  as `product-card`, but it renders no price, rating, score or CTA - the link
+  sits on the name and image. Variants: `figure` (image + caption), `claim`
+  (an assertion the product backs up), `specimen` (image + `specs` rows),
+  `mention` (one line). Put the point being made in `body`, not a product
+  description.
 - Prose between blocks: `core/markdown` nodes.
 
 ## The page-build loop
@@ -89,7 +96,9 @@ for an auth problem.
    error, not a whole-call failure); results are grouped, not merged.
 3. Compose the block tree. Typical roundup: intro -> toc -> quick-picks
    (items bind products) -> product-card + pros-cons per product ->
-   comparison-table -> faq -> conclusion/verdict.
+   comparison-table -> faq -> conclusion/verdict. A guide that is not a
+   roundup: intro -> section-header -> markdown -> editorial-product where a
+   product makes a point concrete -> faq -> conclusion.
 4. `content-egg/validate-blocks` - iterate until `valid: true`; errors carry
    JSON-pointer paths. Send the same `products` + `search_tokens` you will
    send to create-post, so product_refs resolve for a post that does not
