@@ -35,7 +35,7 @@ Basic, on every route).
    before calling them, especially publishing, which is hard to undo.
 3. Never write back a masked secret value (`••••...`).
 4. For a live display use the block in the block editor, or
-   `[content-egg-block template="X"]` for the classic editor / WooCommerce /
+   `[content-egg-block template=X]` for the classic editor / WooCommerce /
    any non-Gutenberg post type. Never generate bare `[content-egg]` shortcodes.
 5. Abilities require a WordPress application password. If the transport has no
    credentials, **stop and ask the user** - never bypass auth by reading
@@ -44,8 +44,10 @@ Basic, on every route).
 
 ## Load the guide
 
-1. Call `content-egg/get-status`. It reports `guide_version` and
-   `guide_topics`.
+1. Call `content-egg/get-status` (it reports `guide_version`). If it reports
+   `guide_topics`, continue. If not (an older build), call
+   `content-egg/get-guide` with no input - it returns the full guide - and skip
+   the topic steps.
 2. Call `content-egg/get-guide` with no input: the core guide plus the topic
    index.
 3. Call `content-egg/get-guide` with `{"topic": "<name>"}` for the task at hand
@@ -53,7 +55,6 @@ Basic, on every route).
    everything. A loaded topic stays valid while `guide_version` is unchanged.
    The same text is public at
    `GET {site}/wp-json/content-egg/v1/agent-guide?topic=<name>`.
-4. No `guide_topics` in `get-status`: `get-guide` returns the full guide - use it.
 
 | Topic | Load when |
 |---|---|
@@ -63,9 +64,6 @@ Basic, on every route).
 | `woocommerce` | Working with WooCommerce products: product pages, the price sync setup and the recommended comparison product. |
 | `media-and-coupons` | Adding images, videos or coupons to a post. |
 | `feeds-and-shops` | Adding a product source: a new affiliate shop (Affiliate Egg) or a product feed. |
-
-Guide topics need the first Content Egg release whose `get-status` reports
-`guide_topics`; older sites return the full guide from `get-guide`.
 
 ## Network failures
 
