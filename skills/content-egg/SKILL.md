@@ -1,233 +1,76 @@
 ---
 name: content-egg
-description: Use when the user wants to manage the Content Egg WordPress plugin or build affiliate/product pages (reviews, roundups, comparisons) on a site running it - searching products, images, videos or coupons, attaching them to posts, and composing validated block layouts through its agent API (WordPress Abilities REST or MCP).
+description: Use when the user wants to manage the Content Egg WordPress plugin or build affiliate/product pages (reviews, roundups, comparisons), including price-comparison pages that match the same product across shops and WooCommerce products, on a site running it - searching products, images, videos or coupons, attaching them to posts, and composing validated block layouts through its agent API (WordPress Abilities REST or MCP).
 ---
 
 # Content Egg agent skill
 
 You are working with a WordPress site running the Content Egg plugin, which
-exposes an agent API over the WordPress Abilities API. `content-egg/get-status`
-reports the live ability count and the guide/OpenAPI URLs for that specific
-site - trust it over anything hardcoded here.
+exposes an agent API over the WordPress Abilities API. The site's own guide is
+the single source of instructions; this skill only connects you and says which
+part of it to load.
 
 ## Connect
 
-Ask the user for: site URL, WordPress username, application password.
+Ask the user for: site URL, WordPress username, application password (HTTP
+Basic, on every route).
 
-- Discovery: `GET {site}/wp-json/wp-abilities/v1/abilities` (HTTP Basic auth)
-- Execute read abilities: `GET .../wp-abilities/v1/abilities/{name}/run?input[key]=value`
-- Execute write abilities: `POST .../wp-abilities/v1/abilities/{name}/run` with body `{"input": {...}}`
-- All-POST alternative: `POST {site}/wp-json/content-egg/v1/abilities/{name}/run`
-  with body `{"input": {...}}` for EVERY ability, reads included - same
-  abilities, same permission checks and logging. Prefer it when you drive HTTP
-  yourself: nothing to serialize into `input[...]` query params, and it is
-  unaffected by edge/WAF rules that block parameterized GETs. (Posting a
-  read-only ability to the wp-abilities route returns 405 instead.)
-- OpenAPI: `GET {site}/wp-json/content-egg/v1/openapi`
-- Site-specific guide: `GET {site}/wp-json/content-egg/v1/agent-guide` - READ IT FIRST;
-  it carries the canonical block-choice rules and workflows.
-- MCP alternative (when the site runs the MCP Adapter): `{site}/wp-json/content-egg/mcp`
+- All-POST, preferred from plain HTTP: `POST {site}/wp-json/content-egg/v1/abilities/{name}/run`
+  with body `{"input": {...}}` for EVERY ability, reads included.
+- Canonical: discovery `GET {site}/wp-json/wp-abilities/v1/abilities`; run at
+  `.../wp-abilities/v1/abilities/{name}/run` - reads are GET with
+  `input[key]=value`, writes are POST (a read POSTed here returns 405).
+- `{name}` is `content-egg/<ability>`: keep the slash literal, never `%2F`.
+- MCP, when the site runs the MCP Adapter plugin: `{site}/wp-json/content-egg/mcp`.
+
+## Ground rules
+
+1. Errors self-describe: 400 `cegg_validation_failed` names the fix; 409
+   `cegg_conflict` means re-read and retry with the fresh `revision`; 409
+   `cegg_feed_pending` means poll `get-feed-status`; 429 means wait
+   `retry_after` seconds; 502 `cegg_search_failed` means the module's API
+   failed (bad key, quota) - relay the message, don't retry blindly.
+2. `remove-products`, `insert-blocks`, `set-featured-image` and
+   `set-post-status` are destructive/outward-facing - confirm with the user
+   before calling them, especially publishing, which is hard to undo.
+3. Never write back a masked secret value (`••••...`).
+4. For a live display use the block in the block editor, or
+   `[content-egg-block template="X"]` for the classic editor / WooCommerce /
+   any non-Gutenberg post type. Never generate bare `[content-egg]` shortcodes.
+5. Abilities require a WordPress application password. If the transport has no
+   credentials, **stop and ask the user** - never bypass auth by reading
+   `wp-config.php`/the database, minting your own application password, or
+   calling plugin code directly. A 401/403 means stop and ask.
+
+## Load the guide
+
+1. Call `content-egg/get-status`. It reports `guide_version` and
+   `guide_topics`.
+2. Call `content-egg/get-guide` with no input: the core guide plus the topic
+   index.
+3. Call `content-egg/get-guide` with `{"topic": "<name>"}` for the task at hand
+   (several if the task spans them) before you act; `"all"` returns
+   everything. A loaded topic stays valid while `guide_version` is unchanged.
+   The same text is public at
+   `GET {site}/wp-json/content-egg/v1/agent-guide?topic=<name>`.
+4. No `guide_topics` in `get-status`: `get-guide` returns the full guide - use it.
+
+| Topic | Load when |
+|---|---|
+| `page-building` | Before writing, building or editing any post or page: Egg Blocks vs live blocks, the block palette, node shapes, create-post and insert-blocks. |
+| `products-and-modules` | Finding and attaching products: auditing modules, search-products, add-products-to-post, the manual Offer module, editing attached products. |
+| `price-comparison` | Comparing one product across shops: finding it in several modules, deciding which offers are the same product, keeping comparison pages current. |
+| `woocommerce` | Working with WooCommerce products: product pages, the price sync setup and the recommended comparison product. |
+| `media-and-coupons` | Adding images, videos or coupons to a post. |
+| `feeds-and-shops` | Adding a product source: a new affiliate shop (Affiliate Egg) or a product feed. |
+
+Guide topics need the first Content Egg release whose `get-status` reports
+`guide_topics`; older sites return the full guide from `get-guide`.
+
+## Network failures
 
 If requests fail at the network level - DNS failure, connection refused, a
 sandbox policy error - rather than with an HTTP 401/403, your environment may
 restrict outbound domains. Ask the user to allow the site's domain (in Claude:
 Settings -> Capabilities -> allowed domains), then retry. Don't mistake this
 for an auth problem.
-
-## Ground rules
-
-1. Call `content-egg/get-status` first; it reports the build, module count and
-   the guide/OpenAPI URLs.
-2. On the `wp-abilities` route, read abilities are GET and write abilities are
-   POST. Empty input is fine on bare GET. Exceptions: `validate-blocks` and
-   `preview-blocks` are POST even though they have no side effects - their
-   block tree is too nested for query params. When unsure of an ability's
-   method, read it from discovery/OpenAPI. None of this applies on the
-   `content-egg/v1` all-POST route, where every ability is a POST.
-3. Errors self-describe: 400 `cegg_validation_failed` messages name the field
-   and the fix; 409 `cegg_conflict` means re-read (`get-post-products`) and
-   retry with the fresh `revision`; 409 `cegg_feed_pending` means a feed is
-   still importing (poll `get-feed-status`); 429 means wait `retry_after`
-   seconds; 502 `cegg_search_failed` means the module's own API failed
-   (bad/missing key, quota) - relay the message, don't retry blindly. The site
-   guide lists the full set.
-4. `remove-products`, `insert-blocks`, `set-featured-image` and
-   `set-post-status` are destructive/outward-facing - confirm with the user
-   before calling them (especially publishing, which is hard to undo).
-5. Never write back a masked secret value (`••••...`).
-6. For a live display use the block in the block editor, or
-   `[content-egg-block template="X"]` for the classic editor / WooCommerce /
-   any non-Gutenberg post type. Never generate bare `[content-egg]` shortcodes.
-7. Abilities require a WordPress application password (HTTP Basic); the server
-   enforces it. If the transport has no credentials, **stop and ask the user** —
-   never bypass auth by reading `wp-config.php`/the database, minting your own
-   application password, or calling plugin code directly. A 401/403 means stop
-   and ask.
-
-## Choosing blocks (summary - the site guide has the full rule)
-
-- Authoring editorial content (reviews, roundups, comparisons where YOU write
-  titles/verdicts/copy): use `eggb/*` Egg Blocks. Content is a snapshot you
-  own; price/link/stock hydrate live.
-- Embedding a live display (no per-item authoring): use the matching live block
-  — `content-egg/products`, `content-egg/coupons`, `content-egg/images` or
-  `content-egg/videos`. Each renders module data attached to the post; template
-  ids are unprefixed (`offers_grid`, never `data_offers_grid`). Coupons/images/
-  videos have no Egg Blocks equivalent.
-- A product in an article that is not a sales page (how-to, buying guide,
-  troubleshooting, explainer): `eggb/editorial-product`. Same product binding
-  as `product-card`, but it renders no price, rating, score or CTA - the link
-  sits on the name and image. Variants: `figure` (image + caption), `claim`
-  (an assertion the product backs up), `specimen` (image + `specs` rows),
-  `mention` (one line). Put the point being made in `body`, not a product
-  description.
-- Prose between blocks: `core/markdown` nodes.
-
-## The page-build loop
-
-1. `content-egg/list-blocks` - catalog + decision rule (fetch one type with
-   `input[type]=eggb/faq` for its full attribute schema).
-2. `content-egg/search-products` on an active module (see
-   `content-egg/list-modules`); the lean default is enough - keep the
-   response's `search_token` and refer to results by `unique_id` from here on.
-   To compare across networks in one call,
-   `content-egg/search-all-products` takes explicit `module_ids` (up to 6) and
-   returns results grouped per module (one broken module reports a per-module
-   error, not a whole-call failure); results are grouped, not merged.
-3. Compose the block tree. Typical roundup: intro -> toc -> quick-picks
-   (items bind products) -> product-card + pros-cons per product ->
-   comparison-table -> faq -> conclusion/verdict. A guide that is not a
-   roundup: intro -> section-header -> markdown -> editorial-product where a
-   product makes a point concrete -> faq -> conclusion.
-4. `content-egg/validate-blocks` - iterate until `valid: true`; errors carry
-   JSON-pointer paths. Send the same `products` + `search_tokens` you will
-   send to create-post, so product_refs resolve for a post that does not
-   exist yet.
-5. `content-egg/create-post` - one call: `{title, status: "draft", blocks,
-   products: {ModuleId: ["unique_id", ...]}, search_tokens: {ModuleId: "..."}}`.
-   product_refs resolve against the payload by module_id + unique_id. With the
-   module's `search_token`, its items are just unique_id strings and the server
-   substitutes its stored copy; without one, pass full `fields: "full"` items
-   unchanged. To tidy a source title or add a badge, send `{unique_id,
-   overrides}` per item (title, subtitle, description, badge, badge_color,
-   promo) - applied on top and kept across price refreshes. Heavy rewriting ->
-   Egg Blocks instead.
-6. `content-egg/preview-blocks` or open `edit_url`; publish only when the
-   user asks (needs publish_posts). Preview before the post exists validates
-   and renders, but a product-bound block has nothing to hydrate from and
-   comes back empty with an `unhydrated_product_ref` warning - that is
-   expected; preview again with `post_id` after create-post to see it filled.
-7. Finish the post: `content-egg/find-posts` (locate a post_id by search,
-   status or `has_module`) -> `content-egg/set-featured-image` (an
-   `attachment_id`, or an `image_url` e.g. from `search-images`) ->
-   `content-egg/set-post-status` (draft/pending/publish/future; schedule with
-   status `future` + a future `date_gmt`/`date`). Confirm before publishing.
-
-## Attaching products to an existing post
-
-To add products to a post that already exists - not a brand-new one built via
-`create-post`'s combined `blocks` + `products` payload - search first:
-`content-egg/search-products` on an active module (see `list-modules`); the
-lean default result is enough, no `fields: "full"` needed. When there are
-results, the response carries a top-level `search_token`. Attach with
-`content-egg/add-products-to-post`, passing that `search_token` plus `items`
-as the chosen `unique_id` strings (or `{unique_id, overrides}` per item -
-`overrides` tidies a title or adds a badge: title, subtitle, description,
-short_description, badge, badge_color, promo). The server attaches its own
-stored copy of each result - you never echo item JSON back. The token
-expires in ~30 minutes; an expired-token error means re-run the search and
-attach again. If the search response has no `search_token`, the site runs an
-older Content Egg - fall back to `fields: "full"` and pass items unchanged.
-
-`create-post`, `validate-blocks` and `preview-blocks` take the same tokens as
-a `search_tokens` map (module_id => token) beside their `products` payload, so
-the page-build loop above never echoes item JSON either. Below Content Egg
-21.4.3 those three accept full items only: a 400 naming `products` (or an
-unknown-parameter error on `search_tokens`) means fall back to
-`fields: "full"`. Check `get-status`'s `plugin_version` if you want to know up
-front.
-
-## Finding images, videos and coupons
-
-Beyond products, Content Egg has image, video and coupon modules (see the
-`type` in `content-egg/list-modules`). The flow mirrors products: search with
-`content-egg/search-images` / `search-videos` / `search-coupons` (one active
-module of that type; the lean default result is enough, no `fields: "full"`
-needed) -> when there are results the response carries a top-level
-`search_token` -> attach with `content-egg/add-images-to-post` /
-`add-videos-to-post` / `add-coupons-to-post`, passing that `search_token`
-plus `items` as the chosen `unique_id` strings - the server attaches its own
-stored copy of each result, you never echo item JSON back (same ~30-minute
-expiry and older-CE fallback as products, above) -> render with the matching
-live block (`content-egg/images` / `videos` / `coupons`), or
-`[content-egg-block]` in a classic-editor post. The block only shows what's
-attached — insert-without-attach renders nothing. Each block has its own
-template set (`list-blocks` -> its `attributes.template`). You can also use
-the returned URLs/codes inline (e.g. a core embed) without attaching.
-
-## Custom / manual products (Offer module)
-
-For a product with no feed or API behind it (a hand-picked deal, an unsupported
-merchant), use the built-in "Offer" module: `add-products-to-post` with
-`module_id: "Offer"` and items you construct yourself - each needs
-`unique_id`, `title` and `url` (or `orig_url`), plus optional
-`price`/`currencyCode`/`description`/`img`. Offer auto-activates on first use
-(no `activate-module` call), and being a product module it renders through the
-products block and Egg Blocks like any other. Find it in `list-modules` (it may
-be listed as inactive). Affiliate links are applied automatically from the Offer
-module's per-domain deeplink rules; the response's `monetization` block reports
-how many links were monetized and lists any `domains_without_deeplink` - relay
-those so the user can add a deeplink rule in the Offer settings.
-
-## Editing existing posts
-
-`content-egg/get-post-blocks` -> modify the tree (opaque nodes round-trip
-verbatim - leave them alone) -> `content-egg/validate-blocks` with `post_id`
--> `content-egg/insert-blocks` (`append`/`prepend`/`at_index`/`replace_all`).
-
-## Worked example: minimal roundup
-
-POST create-post input:
-
-    {
-      "title": "Best USB Microphones 2026",
-      "status": "draft",
-      "blocks": [
-        {"type": "eggb/intro", "attrs": {"title": "Best USB Microphones", "body": "We compared the top options."}},
-        {"type": "eggb/quick-picks", "attrs": {"items": [
-          {"product_ref": {"module_id": "Amazon", "unique_id": "B0EXAMPLE1"}, "label": "Best overall"}
-        ]}},
-        {"type": "core/markdown", "markdown": "## How we chose\n\nHands-on testing plus spec analysis."},
-        {"type": "eggb/faq", "attrs": {"items": [{"question": "Do I need an interface?", "answer": "No - USB mics connect directly."}]}}
-      ],
-      "products": {"Amazon": ["B0EXAMPLE1"]},
-      "search_tokens": {"Amazon": "<search_token from search-products>"}
-    }
-
-## Module management (admin-capability users)
-
-`activate-module` / `deactivate-module`, `update-module-settings` (partial
-patch; get keys from `get-module-settings`), `create-feed-module` (async -
-poll `get-feed-status`), `update-settings` for global options.
-
-`connect-shop` creates a new affiliate shop module from a domain (needs the
-Affiliate Egg plugin): `connect-shop` (`domain`, e.g. "walmart.com") ->
-`search-products` (new `module_id`) -> `add-products-to-post` - attach by
-`search_token` as described above under "Attaching products to an existing
-post". Known shops are searchable at once; a custom domain needs Affiliate
-Egg 11.0+ and a `search_url` containing `%KEYWORD%`. The response's
-`searchable` flag says whether keyword search will work.
-
-## Beyond Content Egg (core WordPress)
-
-Featured image, publish/schedule and finding posts are first-class abilities
-(`find-posts`, `set-featured-image`, `set-post-status`) - use those; they run
-through the same channel as every other ability (including OpenAPI/connector
-agents). For anything else in core WordPress (categories/tags, excerpt, slug…),
-the full WordPress REST API (`{site}/wp-json/wp/v2/`) is reachable when an
-authenticated REST transport is available - a direct HTTP client (Claude, Claude
-Code, your own script) or an MCP/connector that exposes WordPress core - under
-the same application password, no separate auth. (An agent limited to the Content Egg
-OpenAPI schema must add those endpoints to its connector first.) E.g. assign
-categories/tags via `/wp/v2/categories` + `/wp/v2/tags` and the post's
-`categories`/`tags` arrays.
