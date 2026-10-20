@@ -60,7 +60,7 @@ Basic, on every route).
 |---|---|
 | `page-building` | Before writing, building or editing any post or page: Egg Blocks vs live blocks, the block palette, node shapes, create-post and insert-blocks. |
 | `products-and-modules` | Finding and attaching products: auditing modules, search-products, add-products-to-post, the manual Offer module, editing attached products. |
-| `price-comparison` | Comparing one product across shops: finding it in several modules, deciding which offers are the same product, keeping comparison pages current. |
+| `price-comparison` | Comparing one product across shops: finding it in several modules, deciding which offers are the same product, keeping comparison pages current, and linking variant pages (128 GB, 256 GB...) as a family with a variant switcher. |
 | `woocommerce` | Working with WooCommerce products: product pages, the price sync setup and the recommended comparison product. |
 | `media-and-coupons` | Adding images, videos or coupons to a post. |
 | `feeds-and-shops` | Adding a product source: a new affiliate shop (Affiliate Egg) or a product feed. |
